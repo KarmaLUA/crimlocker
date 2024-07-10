@@ -2,6 +2,7 @@ getgenv().PredictionVelocity = 16
 getgenv().AimbotSmoothness = 0.87
 getgenv().PredictionSampleCount = 3
 getgenv().PredictionTimeFrame = 0.2
+getgenv().ForwardPredictionMultiplier = 1.5
 
 local aimbotEnabled = false
 local target = nil
@@ -15,7 +16,6 @@ gui.Parent = game.CoreGui
 
 local rightMouseButtonDown = false
 local lastPositions = {}
-
 game:GetService("UserInputService").InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.X then
         aimbotEnabled = not aimbotEnabled
@@ -107,7 +107,7 @@ function predictPosition(part)
         
         if #positions >= 2 then
             local velocity = Vector3.new(0, 0, 0)
-            local acceleration = Vector3.new(0, 0, 0)
+            local direction = Vector3.new(0, 0, 0)
             
             for i = 1, #positions - 1 do
                 local timeFrame = positions[i].time - positions[i + 1].time
@@ -115,20 +115,26 @@ function predictPosition(part)
                 local currentVelocity = positionDelta / timeFrame
                 
                 velocity = velocity + currentVelocity
-                
-                if i < #positions - 1 then
-                    local nextTimeFrame = positions[i + 1].time - positions[i + 2].time
-                    local nextPositionDelta = positions[i + 1].position - positions[i + 2].position
-                    local nextVelocity = nextPositionDelta / nextTimeFrame
-                    
-                    acceleration = acceleration + (currentVelocity - nextVelocity) / timeFrame
-                end
+                direction = direction + positionDelta.Unit
             end
             
             velocity = velocity / (#positions - 1)
-            acceleration = acceleration / (#positions - 2)
+            direction = direction.Unit
             
-            local predictedPosition = part.Position + velocity * getgenv().PredictionTimeFrame + 0.5 * acceleration * getgenv().PredictionTimeFrame^2
+            local cameraPosition = game.Workspace.CurrentCamera.CFrame.Position
+            local toTarget = (part.Position - cameraPosition).Unit
+            local dotProduct = toTarget:Dot(direction)
+            
+            local predictionMultiplier = 1
+            if dotProduct > 0 then
+                -- Target is moving away from the camera
+                predictionMultiplier = getgenv().ForwardPredictionMultiplier
+            elseif dotProduct < 0 then
+                -- Target is moving towards the camera
+                predictionMultiplier = 1 / getgenv().ForwardPredictionMultiplier
+            end
+            
+            local predictedPosition = part.Position + velocity * getgenv().PredictionTimeFrame * predictionMultiplier
             return predictedPosition
         end
     end
